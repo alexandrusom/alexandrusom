@@ -6,6 +6,10 @@ export const site = {
   name: "Alexandru Som",
 
 
+  // Supabase project (both values are public by design; the database rules decide who can read what)
+  supabaseUrl: "https://cmbrupeqoseswqovwarz.supabase.co",
+  supabasePublishableKey: "sb_publishable_e7kPI1gpqSAIvxQHUWEuPw_EQ9y0MF7",
+
   // Supabase function that saves calculator leads (see README → Supabase)
   leadEndpoint: "https://cmbrupeqoseswqovwarz.supabase.co/functions/v1/submit-lead",
   // Supabase function that saves consultation requests from the booking page

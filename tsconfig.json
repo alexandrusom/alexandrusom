@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "supabase/functions/submit-lead", "supabase/functions/submit-contact"]
+  "exclude": ["node_modules", "supabase/functions/submit-lead", "supabase/functions/submit-contact", "supabase/functions/_shared/notify.ts"]
 }
