@@ -35,17 +35,19 @@ Project `cmbrupeqoseswqovwarz` (EU, Ireland). Two tables, both locked with row l
 | `leads` | Calculator page (name, phone, answers, result, risk level) | `submit-lead` |
 | `contact_requests` | Booking page `/boka/` (name, phone, topic, message) | `submit-contact` |
 
-See them in the dashboard under **Table Editor**. To change a function, edit it and redeploy:
+`contacts_overview` (a view) combines both: one row per person, matched by phone number, with their latest booking info and latest calculator info.
+
+See them in the dashboard under **Table Editor**. New leads and bookings are emailed to `ALERT_EMAIL` via Resend once `RESEND_API_KEY` is set. To change a function, edit it and redeploy:
 
 ```bash
 supabase functions deploy submit-lead --no-verify-jwt --use-api
 supabase functions deploy submit-contact --no-verify-jwt --use-api
 ```
 
-Only these sites may submit (update when you add a custom domain):
+Only these sites may submit:
 
 ```bash
-supabase secrets set ALLOWED_ORIGINS=https://alexandrusom.github.io,http://localhost:3000
+supabase secrets set ALLOWED_ORIGINS=https://alexandrusom.com,https://www.alexandrusom.com,https://alexandrusom.github.io,http://localhost:3000
 ```
 
 ## Deploying (GitHub Pages)

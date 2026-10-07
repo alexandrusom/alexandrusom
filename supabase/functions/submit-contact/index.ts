@@ -2,6 +2,7 @@
 // Deploy: supabase functions deploy submit-contact --no-verify-jwt --use-api
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { notify } from "../_shared/notify.ts";
 
 // Optional: comma-separated list of allowed site origins (shared with submit-lead)
 const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
@@ -68,6 +69,13 @@ Deno.serve(async (req) => {
     console.error("Failed to insert contact request", error);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
+
+  await notify(`Ny bokning: ${name}`, [
+    ["Namn", name],
+    ["Telefon", phone],
+    ["Vill", topic],
+    ["Meddelande", message],
+  ]);
 
   return json({ ok: true });
 });

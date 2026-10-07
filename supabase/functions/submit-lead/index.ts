@@ -3,6 +3,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { calculatePlan, isActivityLevel, isSex, riskOf, type CalorieInput } from "../_shared/calories.ts";
+import { notify } from "../_shared/notify.ts";
 
 // Optional: comma-separated list of allowed site origins, e.g. "https://alexandrusom.com,http://localhost:3000"
 const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
@@ -103,6 +104,15 @@ Deno.serve(async (req) => {
     console.error("Failed to insert lead", error);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
+
+  const risk = riskOf(result.plan);
+  await notify(`Ny lead från kaloriräknaren: ${name}${risk === "dangerous" ? " (farligt mål)" : ""}`, [
+    ["Namn", name],
+    ["Telefon", phone],
+    ["Mål", `${input.weightKg} → ${input.goalWeightKg} kg på ${input.weeks} veckor`],
+    ["Kalorimål", `${result.plan.targetCalories} kcal/dag`],
+    ["Risk", risk],
+  ]);
 
   return json({ ok: true });
 });
