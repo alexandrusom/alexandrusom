@@ -26,6 +26,6 @@ export const site = {
     { label: "YouTube", href: "" },
   ],
 
-  // TODO: contact email for privacy requests.
-  contactEmail: "",
+  // Contact email shown in the privacy policy
+  contactEmail: "alexandrusom1@gmail.com",
 };

@@ -68,22 +68,25 @@ function Hero({ t, lang }: SectionProps) {
     <section>
       <div className="relative overflow-hidden bg-anthracite-deep">
         {/* Phones: video on top, box overlapping below it. Desktop: video fills the panel, box on the right. */}
-        <div className="relative h-[60svh] min-h-80 lg:absolute lg:inset-0 lg:h-auto">
+        <div className="relative h-[72svh] min-h-96 lg:absolute lg:inset-0 lg:h-auto">
           <HeroVideos sources={site.heroVideos} />
         </div>
-        <div className="relative -mt-24 px-3 pb-3 sm:px-6 sm:pb-6 lg:mt-0 lg:flex lg:min-h-svh lg:items-center lg:justify-end lg:px-10 lg:py-16">
-          <div className="rounded-2xl border border-white/10 bg-anthracite-deep/70 p-7 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-9 lg:max-w-md">
+        <div className="relative -mt-14 px-3 pb-3 sm:-mt-24 sm:px-6 sm:pb-6 lg:mt-0 lg:flex lg:min-h-svh lg:items-center lg:justify-end lg:px-10 lg:py-16">
+          <div className="rounded-2xl border border-white/10 bg-anthracite-deep/70 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-9 lg:max-w-md">
             {/* Setup line, then the punchline */}
-            <p className="text-lg font-medium tracking-[-0.02em] text-titanium/60">{t.hero.lead}</p>
-            <h1 className={`${heading} mt-2 text-titanium-light`}>{t.hero.title}</h1>
-            <p className="mt-5 leading-relaxed text-titanium/75">
+            <p className="text-base font-medium tracking-[-0.02em] text-titanium/60 sm:text-lg">{t.hero.lead}</p>
+            {/* Smaller on phones so the videos stay visible */}
+            <h1 className="mt-1.5 text-[1.75rem] font-semibold leading-[1.08] tracking-[-0.035em] text-titanium-light sm:mt-2 sm:text-[2.75rem] sm:leading-[1.05]">
+              {t.hero.title}
+            </h1>
+            <p className="mt-3 text-[15px] leading-relaxed text-titanium/75 sm:mt-5 sm:text-base">
               {t.hero.subtitle}{" "}
               <strong className="box-decoration-clone bg-[linear-gradient(transparent_55%,rgba(200,197,190,0.28)_55%)] font-semibold text-white">
                 {t.hero.highlight}
               </strong>
             </p>
 
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row lg:flex-col">
+            <div className="mt-5 flex flex-col gap-2.5 sm:mt-7 sm:flex-row sm:gap-3 lg:flex-col">
               <Link href={localePath(lang, "/calculator/")} className={`${button.light} group py-3.5 sm:flex-1`}>
                 {t.hero.primaryCta}
                 <span aria-hidden className="transition-transform group-hover:translate-x-1">
@@ -93,7 +96,7 @@ function Hero({ t, lang }: SectionProps) {
               <BookLink lang={lang} className={`${button.outlineLight} sm:flex-1`} />
             </div>
 
-            <ul className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-titanium/70">
+            <ul className="mt-6 hidden flex-wrap items-center sm:flex gap-x-5 gap-y-2 text-xs font-medium text-titanium/70">
               {t.hero.reassurance.map((item) => (
                 <li key={item} className="flex items-center gap-1.5">
                   <CheckIcon className="text-titanium-light" />
