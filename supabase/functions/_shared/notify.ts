@@ -1,9 +1,9 @@
-// Emails Alexandru when a new lead or booking comes in (via Resend).
-// Needs the RESEND_API_KEY and ALERT_EMAIL secrets; without them it quietly does nothing.
+// Emails the coach when a new lead or booking comes in (via Resend).
+// Needs the RESEND_API_KEY secret (ALERT_EMAIL is the fallback recipient); without them it quietly does nothing.
 
-export async function notify(subject: string, lines: [string, string | number | null | undefined][]) {
+export async function notify(recipient: string | null, subject: string, lines: [string, string | number | null | undefined][]) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
-  const to = Deno.env.get("ALERT_EMAIL");
+  const to = recipient ?? Deno.env.get("ALERT_EMAIL");
   if (!apiKey || !to) return;
 
   const escape = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);

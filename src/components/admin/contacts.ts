@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { coachId, supabase } from "@/lib/supabase";
 
 export type Status = "new" | "called" | "client" | "not_interested";
 export type LeadStatus = Exclude<Status, "client">;
@@ -75,7 +75,7 @@ export async function loadContacts(): Promise<Contact[]> {
 export async function saveContactStatus(phone: string, status: Status, notes: string) {
   const { error } = await supabase()
     .from("contact_status")
-    .upsert({ phone, status, notes, updated_at: new Date().toISOString() });
+    .upsert({ coach_id: await coachId(), phone, status, notes, updated_at: new Date().toISOString() });
   return !error;
 }
 
@@ -84,7 +84,10 @@ export async function makeClient(contact: Contact) {
   if (!(await saveContactStatus(contact.phone, "client", contact.notes))) return false;
   const { error } = await supabase()
     .from("client_profiles")
-    .upsert({ phone: contact.phone, start_date: new Date().toISOString().slice(0, 10) }, { onConflict: "phone", ignoreDuplicates: true });
+    .upsert(
+      { coach_id: await coachId(), phone: contact.phone, start_date: new Date().toISOString().slice(0, 10) },
+      { onConflict: "coach_id,phone", ignoreDuplicates: true },
+    );
   return !error;
 }
 

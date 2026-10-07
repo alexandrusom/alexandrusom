@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { button } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { coachId, supabase } from "@/lib/supabase";
 import {
   ACTIVITY_LABELS,
   calendarLink,
@@ -226,7 +226,7 @@ async function saveProfile(phone: string, profile: Profile | null, changes: Part
   const next = { ...(profile ?? emptyProfile(phone)), ...changes };
   const { error } = await supabase()
     .from("client_profiles")
-    .upsert({ ...next, updated_at: new Date().toISOString() });
+    .upsert({ ...next, coach_id: await coachId(), updated_at: new Date().toISOString() });
   return error ? null : next;
 }
 

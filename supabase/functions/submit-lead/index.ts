@@ -3,6 +3,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { calculatePlan, isActivityLevel, isSex, riskOf, type CalorieInput } from "../_shared/calories.ts";
+import { findCoach } from "../_shared/coach.ts";
 import { notify } from "../_shared/notify.ts";
 
 // Optional: comma-separated list of allowed site origins, e.g. "https://alexandrusom.com,http://localhost:3000"
@@ -81,7 +82,11 @@ Deno.serve(async (req) => {
   const result = calculatePlan(input);
   if (!result.ok) return json({ error: "Those calculator details don't have a result." }, 422);
 
+  const coach = await findCoach(supabase, body.coach);
+  if (!coach) return json({ error: "Something went wrong. Please try again." }, 500);
+
   const { error } = await supabase.from("leads").insert({
+    coach_id: coach.id,
     name,
     phone,
     consent: true,
@@ -106,7 +111,7 @@ Deno.serve(async (req) => {
   }
 
   const risk = riskOf(result.plan);
-  await notify(`Ny lead från kaloriräknaren: ${name}${risk === "dangerous" ? " (farligt mål)" : ""}`, [
+  await notify(coach.alert_email, `Ny lead från kaloriräknaren: ${name}${risk === "dangerous" ? " (farligt mål)" : ""}`, [
     ["Namn", name],
     ["Telefon", phone],
     ["Mål", `${input.weightKg} → ${input.goalWeightKg} kg på ${input.weeks} veckor`],

@@ -2,6 +2,7 @@
 // Deploy: supabase functions deploy submit-contact --no-verify-jwt --use-api
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { findCoach } from "../_shared/coach.ts";
 import { notify } from "../_shared/notify.ts";
 
 // Optional: comma-separated list of allowed site origins (shared with submit-lead)
@@ -55,7 +56,11 @@ Deno.serve(async (req) => {
   if (!topic) return json({ error: "Please choose a topic." }, 400);
   if (body.consent !== true || !consentText) return json({ error: "Consent is required." }, 400);
 
+  const coach = await findCoach(supabase, body.coach);
+  if (!coach) return json({ error: "Something went wrong. Please try again." }, 500);
+
   const { error } = await supabase.from("contact_requests").insert({
+    coach_id: coach.id,
     name,
     phone,
     topic,
@@ -70,7 +75,7 @@ Deno.serve(async (req) => {
     return json({ error: "Something went wrong. Please try again." }, 500);
   }
 
-  await notify(`Ny bokning: ${name}`, [
+  await notify(coach.alert_email, `Ny bokning: ${name}`, [
     ["Namn", name],
     ["Telefon", phone],
     ["Vill", topic],

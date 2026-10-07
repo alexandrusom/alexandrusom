@@ -3,11 +3,11 @@ import type { Food } from "./FoodsPanel";
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 
-/** Loads the whole food list (Livsmedelsverket + your own), page by page. */
+/** Loads the whole food list (shared Livsmedelsverket foods + the coach's own, with their favourites), page by page. */
 export async function loadAllFoods(): Promise<Food[]> {
   const all: Food[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase().from("foods").select("*").order("name").range(from, from + PAGE - 1);
+    const { data, error } = await supabase().from("coach_foods").select("*").order("name").range(from, from + PAGE - 1);
     if (error) throw error;
     all.push(...(data as Food[]));
     if (data.length < PAGE) return all;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { coachId, supabase } from "@/lib/supabase";
 import { byRelevance, loadAllFoods } from "./foodsData";
 
 export type Category =
@@ -146,7 +146,10 @@ export function FoodsPanel() {
 
   async function toggleFavorite(food: Food) {
     replace({ ...food, favorite: !food.favorite });
-    const { error } = await supabase().from("foods").update({ favorite: !food.favorite }).eq("id", food.id);
+    const favorites = supabase().from("food_favorites");
+    const { error } = food.favorite
+      ? await favorites.delete().eq("food_id", food.id)
+      : await favorites.insert({ coach_id: await coachId(), food_id: food.id });
     if (error) {
       replace(food);
       setError("Couldn't update favourite.");
@@ -372,7 +375,7 @@ function FoodForm({
     const { data, error } = await query;
     setBusy(false);
     if (error) setError("Couldn't save. Check that the numbers are realistic (per 100 g).");
-    else onSaved(data as Food);
+    else onSaved({ ...(data as Food), favorite: food?.favorite ?? false });
   }
 
   const field = "mt-1 w-full rounded-md border border-anthracite/20 bg-white px-3 py-2 font-normal outline-none focus:border-military";
