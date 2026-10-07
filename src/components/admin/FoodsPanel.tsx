@@ -4,7 +4,17 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 
-export type Category = "protein" | "carbs" | "fat" | "vegetables" | "fruit" | "dairy" | "snacks" | "drinks" | "other";
+export type Category =
+  | "protein"
+  | "carbs"
+  | "fat"
+  | "vegetables"
+  | "fruit"
+  | "dairy"
+  | "dishes"
+  | "snacks"
+  | "drinks"
+  | "other";
 
 export type Food = {
   id: string;
@@ -19,6 +29,10 @@ export type Food = {
   portion_name: string | null;
   portion_grams: number | null;
   notes: string | null;
+  /** "livsmedelsverket" = imported official data (read-only), "mine" = added by Alexandru */
+  source: "livsmedelsverket" | "mine";
+  lmv_group: string | null;
+  favorite: boolean;
 };
 
 export const CATEGORY_LABELS: Record<Category, string> = {
@@ -28,6 +42,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   vegetables: "Vegetables",
   fruit: "Fruit",
   dairy: "Dairy",
+  dishes: "Dishes",
   snacks: "Snacks",
   drinks: "Drinks",
   other: "Other",
@@ -80,18 +95,35 @@ const toDraft = (f: Food): Draft => ({
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 
+const PAGE = 1000; // Supabase returns at most 1000 rows per request
+const SHOW = 150; // rows rendered at once; search narrows it down
+
+type SourceFilter = "all" | "favorites" | "mine" | "livsmedelsverket";
+const SOURCE_FILTERS: Record<SourceFilter, string> = {
+  all: "All sources",
+  favorites: "⭐ Favourites",
+  mine: "My foods",
+  livsmedelsverket: "Livsmedelsverket",
+};
+
 export function FoodsPanel() {
   const [foods, setFoods] = useState<Food[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<Category | "all">("all");
-  // null = closed, "new" = adding, otherwise the id being edited
+  const [source, setSource] = useState<SourceFilter>("all");
+  // null = closed, "new" = adding, "copy:<id>" = copying a Livsmedelsverket food, otherwise the id being edited
   const [editing, setEditing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase().from("foods").select("*").order("name");
-    if (error) setError("Couldn't load foods.");
-    else setFoods(data as Food[]);
+    const all: Food[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase().from("foods").select("*").order("name").range(from, from + PAGE - 1);
+      if (error) return setError("Couldn't load foods.");
+      all.push(...(data as Food[]));
+      if (data.length < PAGE) break;
+    }
+    setFoods(all);
   }, []);
 
   useEffect(() => {
@@ -100,14 +132,35 @@ export function FoodsPanel() {
     load();
   }, [load]);
 
-  const visible = useMemo(() => {
+  const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (foods ?? []).filter(
-      (f) =>
-        (category === "all" || f.category === category) &&
-        (!q || f.name.toLowerCase().includes(q) || (f.brand ?? "").toLowerCase().includes(q)),
-    );
-  }, [foods, search, category]);
+    return (foods ?? [])
+      .filter(
+        (f) =>
+          (category === "all" || f.category === category) &&
+          (source === "all" || (source === "favorites" ? f.favorite : f.source === source)) &&
+          (!q || f.name.toLowerCase().includes(q) || (f.brand ?? "").toLowerCase().includes(q)),
+      )
+      // Favourites first, then your own foods, then the rest alphabetically
+      .sort(
+        (a, b) =>
+          Number(b.favorite) - Number(a.favorite) ||
+          Number(b.source === "mine") - Number(a.source === "mine") ||
+          a.name.localeCompare(b.name, "sv"),
+      );
+  }, [foods, search, category, source]);
+  const visible = matches.slice(0, SHOW);
+
+  const replace = (food: Food) => setFoods((list) => list?.map((x) => (x.id === food.id ? food : x)) ?? null);
+
+  async function toggleFavorite(food: Food) {
+    replace({ ...food, favorite: !food.favorite });
+    const { error } = await supabase().from("foods").update({ favorite: !food.favorite }).eq("id", food.id);
+    if (error) {
+      replace(food);
+      setError("Couldn't update favourite.");
+    }
+  }
 
   async function remove(food: Food) {
     if (!window.confirm(`Delete "${food.name}"?`)) return;
@@ -116,32 +169,43 @@ export function FoodsPanel() {
     else setFoods((list) => list?.filter((f) => f.id !== food.id) ?? null);
   }
 
+  const copying = editing?.startsWith("copy:") ? foods?.find((f) => f.id === editing.slice(5)) : undefined;
+  const addSaved = (food: Food) => {
+    setFoods((list) => [...(list ?? []), food]);
+    setEditing(null);
+  };
+
   if (error && !foods) return <p className="mt-8 font-semibold text-red-800">{error}</p>;
   if (!foods) return <p className="mt-8 text-anthracite/60">Loading foods…</p>;
+
+  const chip = (active: boolean) =>
+    `rounded-full px-4 py-2 text-sm font-medium transition ${
+      active ? "bg-anthracite text-white" : "bg-white text-anthracite/70 ring-1 ring-anthracite/15 hover:ring-anthracite/40"
+    }`;
 
   return (
     <section className="mt-6">
       <div className="flex flex-wrap items-center gap-2">
+        {(Object.keys(SOURCE_FILTERS) as SourceFilter[]).map((key) => (
+          <button key={key} type="button" onClick={() => setSource(key)} className={chip(source === key)}>
+            {SOURCE_FILTERS[key]}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {(["all", ...Object.keys(CATEGORY_LABELS)] as (Category | "all")[]).map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setCategory(c)}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              category === c ? "bg-anthracite text-white" : "bg-white text-anthracite/70 ring-1 ring-anthracite/15 hover:ring-anthracite/40"
-            }`}
-          >
-            {c === "all" ? "All" : CATEGORY_LABELS[c]}
+          <button key={c} type="button" onClick={() => setCategory(c)} className={chip(category === c)}>
+            {c === "all" ? "All categories" : CATEGORY_LABELS[c]}
           </button>
         ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <input
           type="search"
-          placeholder="Search foods"
+          placeholder="Search foods, e.g. kyckling"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-full border border-anthracite/20 bg-white px-4 py-2 text-sm outline-none focus:border-military sm:w-72"
+          className="w-full rounded-full border border-anthracite/20 bg-white px-4 py-2 text-sm outline-none focus:border-military sm:w-80"
         />
         <button type="button" className={`${button.primary} sm:ml-auto`} onClick={() => setEditing("new")}>
           + Add food
@@ -150,20 +214,21 @@ export function FoodsPanel() {
 
       {error && <p className="mt-4 text-sm font-semibold text-red-800">{error}</p>}
 
-      {editing === "new" && (
-        <FoodForm
-          onCancel={() => setEditing(null)}
-          onSaved={(food) => {
-            setFoods((list) => [...(list ?? []), food].sort((a, b) => a.name.localeCompare(b.name, "sv")));
-            setEditing(null);
-          }}
-        />
+      {editing === "new" && <FoodForm onCancel={() => setEditing(null)} onSaved={addSaved} />}
+      {copying && (
+        <>
+          <p className="mt-4 text-sm text-anthracite/70">
+            Copying <b>{copying.name}</b> from Livsmedelsverket. Change what you like; it&apos;s saved as one of your foods.
+          </p>
+          <FoodForm template={copying} onCancel={() => setEditing(null)} onSaved={addSaved} />
+        </>
       )}
 
       <div className="mt-6 overflow-x-auto rounded-[10px] bg-white ring-1 ring-anthracite/10">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="text-left text-xs uppercase tracking-[0.1em] text-anthracite/60">
             <tr className="border-b border-anthracite/10">
+              <th className="w-10 p-3" aria-label="Favourite" />
               <th className="p-3 font-medium">Food</th>
               <th className="p-3 text-right font-medium">kcal</th>
               <th className="p-3 text-right font-medium">Protein</th>
@@ -176,20 +241,20 @@ export function FoodsPanel() {
           <tbody>
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-4 text-anthracite/60">
-                  {foods.length === 0 ? "No foods yet. Click “+ Add food” to add your first one." : "No foods match."}
+                <td colSpan={8} className="p-4 text-anthracite/60">
+                  {source === "favorites" ? "No favourites yet. Tap ☆ next to a food to add it." : "No foods match."}
                 </td>
               </tr>
             )}
             {visible.map((f) =>
               editing === f.id ? (
                 <tr key={f.id}>
-                  <td colSpan={7} className="p-0">
+                  <td colSpan={8} className="p-0">
                     <FoodForm
                       food={f}
                       onCancel={() => setEditing(null)}
                       onSaved={(food) => {
-                        setFoods((list) => list?.map((x) => (x.id === food.id ? food : x)) ?? null);
+                        replace(food);
                         setEditing(null);
                       }}
                     />
@@ -198,9 +263,29 @@ export function FoodsPanel() {
               ) : (
                 <tr key={f.id} className="border-b border-anthracite/5 last:border-0">
                   <td className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleFavorite(f)}
+                      aria-pressed={f.favorite}
+                      aria-label={f.favorite ? `Remove ${f.name} from favourites` : `Add ${f.name} to favourites`}
+                      className={`text-lg leading-none ${f.favorite ? "text-amber-500" : "text-anthracite/25 hover:text-anthracite/60"}`}
+                    >
+                      {f.favorite ? "★" : "☆"}
+                    </button>
+                  </td>
+                  <td className="p-3">
                     <span className="font-medium">{f.name}</span>
                     {f.brand && <span className="text-anthracite/50"> · {f.brand}</span>}
-                    <span className="block text-xs text-anthracite/50">{CATEGORY_LABELS[f.category]}</span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-anthracite/50">
+                      <span
+                        className={`rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                          f.source === "mine" ? "bg-military text-white" : "bg-anthracite/10 text-anthracite/70"
+                        }`}
+                      >
+                        {f.source === "mine" ? "Mine" : "Livsmedelsverket"}
+                      </span>
+                      {CATEGORY_LABELS[f.category]}
+                    </span>
                   </td>
                   <td className="p-3 text-right tabular-nums font-semibold">{f.kcal}</td>
                   <td className="p-3 text-right tabular-nums">{f.protein_g} g</td>
@@ -210,12 +295,20 @@ export function FoodsPanel() {
                     {f.portion_name && f.portion_grams ? `${f.portion_name} = ${f.portion_grams} g` : "—"}
                   </td>
                   <td className="whitespace-nowrap p-3 text-right">
-                    <button type="button" className="mr-3 underline underline-offset-4" onClick={() => setEditing(f.id)}>
-                      Edit
-                    </button>
-                    <button type="button" className="text-red-800 underline underline-offset-4" onClick={() => remove(f)}>
-                      Delete
-                    </button>
+                    {f.source === "mine" ? (
+                      <>
+                        <button type="button" className="mr-3 underline underline-offset-4" onClick={() => setEditing(f.id)}>
+                          Edit
+                        </button>
+                        <button type="button" className="text-red-800 underline underline-offset-4" onClick={() => remove(f)}>
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="underline underline-offset-4" onClick={() => setEditing(`copy:${f.id}`)}>
+                        Copy to my foods
+                      </button>
+                    )}
                   </td>
                 </tr>
               ),
@@ -223,13 +316,28 @@ export function FoodsPanel() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-anthracite/50">All values per 100 g. {foods.length} foods in total.</p>
+      <p className="mt-3 text-xs text-anthracite/50">
+        All values per 100 g. Showing {visible.length} of {matches.length} matching ({foods.length} in total)
+        {matches.length > SHOW ? ". Search to narrow it down." : "."} Official data: Livsmedelsverkets livsmedelsdatabas.
+      </p>
     </section>
   );
 }
 
-function FoodForm({ food, onCancel, onSaved }: { food?: Food; onCancel: () => void; onSaved: (food: Food) => void }) {
-  const [draft, setDraft] = useState<Draft>(food ? toDraft(food) : emptyDraft);
+/** Edits one of your foods, or adds a new one (optionally pre-filled from a Livsmedelsverket food). */
+function FoodForm({
+  food,
+  template,
+  onCancel,
+  onSaved,
+}: {
+  food?: Food;
+  template?: Food;
+  onCancel: () => void;
+  onSaved: (food: Food) => void;
+}) {
+  const initial = food ?? template;
+  const [draft, setDraft] = useState<Draft>(initial ? toDraft(initial) : emptyDraft);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));

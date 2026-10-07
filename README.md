@@ -50,6 +50,20 @@ Only these sites may submit:
 supabase secrets set ALLOWED_ORIGINS=https://alexandrusom.com,https://www.alexandrusom.com,https://alexandrusom.github.io,http://localhost:3000
 ```
 
+## Admin page (/admin)
+
+Log in with the admin account (listed in `public.admins`). Tabs:
+
+- **Contacts**: everyone from the calculator and booking form, with status, notes, tap-to-call and a Google Calendar link.
+- **Foods**: Livsmedelsverket's food database (2,600+ foods, read-only, copy to edit) plus your own foods. Star favourites to keep them on top.
+
+To refresh the Livsmedelsverket foods (updates values, never duplicates or touches your own foods/favourites):
+
+```bash
+node scripts/import-livsmedelsverket.mjs
+supabase db query --linked -f supabase/.temp/lmv-import.sql
+```
+
 ## Deploying (GitHub Pages)
 
 1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
