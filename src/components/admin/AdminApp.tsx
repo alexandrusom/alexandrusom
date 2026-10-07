@@ -4,10 +4,11 @@ import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { ContactsPanel } from "./ContactsPanel";
+import { ClientsPanel } from "./ClientsPanel";
+import { LeadsPanel } from "./LeadsPanel";
 import { FoodsPanel } from "./FoodsPanel";
 
-const TABS = { contacts: "Contacts", foods: "Foods" } as const;
+const TABS = { leads: "Leads", clients: "Clients", foods: "Foods" } as const;
 type Tab = keyof typeof TABS;
 
 const inputClass =
@@ -17,7 +18,8 @@ const inputClass =
 export function AdminApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
-  const [tab, setTab] = useState<Tab>("contacts");
+  const [tab, setTab] = useState<Tab>("leads");
+  const [openClient, setOpenClient] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = supabase().auth;
@@ -51,7 +53,10 @@ export function AdminApp() {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => {
+              setTab(key);
+              setOpenClient(null);
+            }}
             aria-current={tab === key ? "page" : undefined}
             className={`flex-1 rounded-full px-5 py-2 text-sm font-semibold transition ${
               tab === key ? "bg-anthracite text-white" : "text-anthracite/70 hover:text-anthracite"
@@ -61,7 +66,16 @@ export function AdminApp() {
           </button>
         ))}
       </nav>
-      {tab === "contacts" ? <ContactsPanel /> : <FoodsPanel />}
+      {tab === "leads" && (
+        <LeadsPanel
+          onClientMade={(c) => {
+            setOpenClient(c.phone);
+            setTab("clients");
+          }}
+        />
+      )}
+      {tab === "clients" && <ClientsPanel openPhone={openClient} onOpen={setOpenClient} />}
+      {tab === "foods" && <FoodsPanel />}
     </div>
   );
 }

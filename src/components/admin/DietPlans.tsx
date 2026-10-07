@@ -24,6 +24,7 @@ type Plan = {
   target_kcal: number | null;
   meals: string[];
   notes: string;
+  is_current: boolean;
 };
 
 type Item = { id: string; plan_id: string; meal: string; food_id: string; grams: number; position: number };
@@ -31,8 +32,8 @@ type Item = { id: string; plan_id: string; meal: string; food_id: string; grams:
 const round = (n: number) => Math.round(n);
 const date = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { dateStyle: "medium" });
 
-/** All diet plans for one client, and the builder for the selected one. */
-export function DietPlans({ client, onBack }: { client: PlanClient; onBack: () => void }) {
+/** A client's diet: the current plan open in the builder, and older versions below it. */
+export function DietPlans({ client }: { client: PlanClient }) {
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,70 +54,119 @@ export function DietPlans({ client, onBack }: { client: PlanClient; onBack: () =
     load();
   }, [load]);
 
-  async function createPlan() {
-    const { data, error } = await supabase()
+  const current = plans?.find((p) => p.is_current) ?? null;
+  const open = plans?.find((p) => p.id === openId) ?? current;
+  const older = (plans ?? []).filter((p) => !p.is_current);
+
+  /** Only one plan can be current, so the old one is unset first. */
+  async function makeCurrent(plan: Plan) {
+    const db = supabase();
+    if (current && current.id !== plan.id) {
+      const { error } = await db.from("diet_plans").update({ is_current: false }).eq("id", current.id);
+      if (error) return setError("Couldn't change the current diet.");
+    }
+    const { error } = await db.from("diet_plans").update({ is_current: true }).eq("id", plan.id);
+    if (error) return setError("Couldn't change the current diet.");
+    setOpenId(null);
+    await load();
+  }
+
+  /** New version: a copy of the current diet (or an empty plan) that becomes the current one. */
+  async function newVersion() {
+    const db = supabase();
+    const version = (plans?.length ?? 0) + 1;
+    const { data, error } = await db
       .from("diet_plans")
       .insert({
         phone: client.phone,
-        name: plans && plans.length > 0 ? `Kostplan ${plans.length + 1}` : "Kostplan",
-        target_kcal: client.target_kcal,
+        name: `Kostplan v${version}`,
+        target_kcal: current?.target_kcal ?? client.target_kcal,
+        meals: current?.meals,
+        notes: current?.notes ?? "",
       })
       .select()
       .single();
-    if (error) return setError("Couldn't create the plan.");
-    setPlans((list) => [data as Plan, ...(list ?? [])]);
-    setOpenId((data as Plan).id);
+    if (error) return setError("Couldn't create the new version.");
+    const plan = data as Plan;
+    if (current) {
+      const { data: items } = await db.from("diet_plan_items").select("meal, food_id, grams, position").eq("plan_id", current.id);
+      if (items?.length) {
+        const { error } = await db.from("diet_plan_items").insert(items.map((i) => ({ ...i, plan_id: plan.id })));
+        if (error) setError("The new version was created, but copying the foods failed.");
+      }
+    }
+    await makeCurrent(plan);
   }
 
   async function deletePlan(plan: Plan) {
-    if (!window.confirm(`Delete the diet plan "${plan.name}"? This can't be undone.`)) return;
+    if (!window.confirm(`Delete "${plan.name}"? This can't be undone.`)) return;
     const { error } = await supabase().from("diet_plans").delete().eq("id", plan.id);
     if (error) return setError("Couldn't delete the plan.");
     setPlans((list) => list?.filter((p) => p.id !== plan.id) ?? null);
     if (openId === plan.id) setOpenId(null);
   }
 
-  const open = plans?.find((p) => p.id === openId);
+  if (!plans) return <p className="mt-6 text-anthracite/60">{error ?? "Loading diet…"}</p>;
 
   return (
-    <section className="mt-6">
-      <button type="button" onClick={open ? () => setOpenId(null) : onBack} className="text-sm underline underline-offset-4">
-        ← {open ? `All plans for ${client.name}` : "Back to contacts"}
-      </button>
+    <section className="mt-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-anthracite/60">
+            {open && !open.is_current ? "Older version" : "Current diet"}
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">{open?.name ?? "No diet yet"}</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {open && !open.is_current && (
+            <>
+              <button type="button" className={button.outlineDark} onClick={() => setOpenId(null)}>
+                ← Back to current
+              </button>
+              <button type="button" className={button.outlineDark} onClick={() => makeCurrent(open)}>
+                Make this current
+              </button>
+            </>
+          )}
+          <button type="button" className={button.primary} onClick={newVersion}>
+            {current ? "+ New version" : "+ Create diet"}
+          </button>
+        </div>
+      </div>
+      {current && open?.is_current && (
+        <p className="mt-1 text-sm text-anthracite/60">
+          &quot;New version&quot; copies this diet so you can change it and keep this one as history.
+        </p>
+      )}
 
       {error && <p className="mt-4 text-sm font-semibold text-red-800">{error}</p>}
 
       {open ? (
         <DietBuilder
+          key={open.id}
           client={client}
           plan={open}
           onPlanChange={(next) => setPlans((list) => list?.map((p) => (p.id === next.id ? next : p)) ?? null)}
         />
       ) : (
-        <>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-anthracite/60">Diet plans</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">{client.name}</h2>
-              <p className="mt-1 text-sm text-anthracite/70">
-                {client.weight_kg && client.goal_weight_kg ? `${client.weight_kg} → ${client.goal_weight_kg} kg · ` : ""}
-                {client.target_kcal ? `Calculator target ${client.target_kcal} kcal/day` : "No calculator target yet"}
-              </p>
-            </div>
-            <button type="button" className={button.primary} onClick={createPlan}>
-              + New diet plan
-            </button>
-          </div>
+        <p className="mt-6 text-anthracite/60">No diet for {client.name} yet.</p>
+      )}
 
-          {!plans && <p className="mt-6 text-anthracite/60">Loading…</p>}
-          {plans?.length === 0 && <p className="mt-6 text-anthracite/60">No diet plans yet for {client.name}.</p>}
-          <ul className="mt-6 space-y-3">
-            {plans?.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center gap-4 rounded-[10px] bg-white p-4 ring-1 ring-anthracite/10">
+      {older.length > 0 && (
+        <div className="mt-10">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-anthracite/60">Older versions</p>
+          <ul className="mt-3 space-y-3">
+            {older.map((p) => (
+              <li
+                key={p.id}
+                className={`flex flex-wrap items-center gap-4 rounded-[10px] bg-white p-4 ring-1 ${
+                  p.id === open?.id ? "ring-military" : "ring-anthracite/10"
+                }`}
+              >
                 <button type="button" onClick={() => setOpenId(p.id)} className="flex-1 text-left">
                   <span className="font-semibold">{p.name}</span>
                   <span className="block text-sm text-anthracite/60">
-                    {p.target_kcal ? `${p.target_kcal} kcal/day · ` : ""}Updated {date(p.updated_at)}
+                    {p.target_kcal ? `${p.target_kcal} kcal/day · ` : ""}Created {date(p.created_at)}
                   </span>
                 </button>
                 <button type="button" className={button.outlineDark} onClick={() => setOpenId(p.id)}>
@@ -128,7 +178,7 @@ export function DietPlans({ client, onBack }: { client: PlanClient; onBack: () =
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
     </section>
   );
