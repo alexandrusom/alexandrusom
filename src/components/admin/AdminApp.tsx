@@ -5,6 +5,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { ContactsPanel } from "./ContactsPanel";
+import { FoodsPanel } from "./FoodsPanel";
+
+const TABS = { contacts: "Contacts", foods: "Foods" } as const;
+type Tab = keyof typeof TABS;
 
 const inputClass =
   "w-full rounded-md border border-anthracite/20 bg-white px-4 py-3 text-anthracite outline-none focus:border-military focus:ring-2 focus:ring-military/30";
@@ -13,6 +17,7 @@ const inputClass =
 export function AdminApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
+  const [tab, setTab] = useState<Tab>("contacts");
 
   useEffect(() => {
     const auth = supabase().auth;
@@ -32,7 +37,7 @@ export function AdminApp() {
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-anthracite/20 pb-6">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.12em] text-anthracite/60">Admin</p>
-          <h1 className="text-3xl font-semibold tracking-[-0.035em]">Contacts</h1>
+          <h1 className="text-3xl font-semibold tracking-[-0.035em]">{TABS[tab]}</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-anthracite/60">{session.user.email}</span>
@@ -41,7 +46,22 @@ export function AdminApp() {
           </button>
         </div>
       </header>
-      <ContactsPanel />
+      <nav aria-label="Admin sections" className="mt-6 flex gap-1 rounded-full bg-white p-1 ring-1 ring-anthracite/10 sm:inline-flex">
+        {(Object.keys(TABS) as Tab[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            aria-current={tab === key ? "page" : undefined}
+            className={`flex-1 rounded-full px-5 py-2 text-sm font-semibold transition ${
+              tab === key ? "bg-anthracite text-white" : "text-anthracite/70 hover:text-anthracite"
+            }`}
+          >
+            {TABS[key]}
+          </button>
+        ))}
+      </nav>
+      {tab === "contacts" ? <ContactsPanel /> : <FoodsPanel />}
     </div>
   );
 }
