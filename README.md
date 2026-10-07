@@ -54,7 +54,7 @@ supabase secrets set ALLOWED_ORIGINS=https://alexandrusom.com,https://www.alexan
 
 Log in with the admin account (listed in `public.admins`). Tabs:
 
-- **Contacts**: everyone from the calculator and booking form, with status, notes, tap-to-call and a Google Calendar link.
+- **Contacts**: everyone from the calculator and booking form, with status, notes, tap-to-call, a Google Calendar link, and their diet plans (meals built from the food list, totals vs their calorie target).
 - **Foods**: Livsmedelsverket's food database (2,600+ foods, read-only, copy to edit) plus your own foods. Star favourites to keep them on top.
 
 To refresh the Livsmedelsverket foods (updates values, never duplicates or touches your own foods/favourites):

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
+import { byRelevance, loadAllFoods } from "./foodsData";
 
 export type Category =
   | "protein"
@@ -95,7 +96,6 @@ const toDraft = (f: Food): Draft => ({
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 
-const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const SHOW = 150; // rows rendered at once; search narrows it down
 
 type SourceFilter = "all" | "favorites" | "mine" | "livsmedelsverket";
@@ -116,14 +116,11 @@ export function FoodsPanel() {
   const [editing, setEditing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const all: Food[] = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase().from("foods").select("*").order("name").range(from, from + PAGE - 1);
-      if (error) return setError("Couldn't load foods.");
-      all.push(...(data as Food[]));
-      if (data.length < PAGE) break;
+    try {
+      setFoods(await loadAllFoods());
+    } catch {
+      setError("Couldn't load foods.");
     }
-    setFoods(all);
   }, []);
 
   useEffect(() => {
@@ -141,13 +138,7 @@ export function FoodsPanel() {
           (source === "all" || (source === "favorites" ? f.favorite : f.source === source)) &&
           (!q || f.name.toLowerCase().includes(q) || (f.brand ?? "").toLowerCase().includes(q)),
       )
-      // Favourites first, then your own foods, then the rest alphabetically
-      .sort(
-        (a, b) =>
-          Number(b.favorite) - Number(a.favorite) ||
-          Number(b.source === "mine") - Number(a.source === "mine") ||
-          a.name.localeCompare(b.name, "sv"),
-      );
+      .sort(byRelevance);
   }, [foods, search, category, source]);
   const visible = matches.slice(0, SHOW);
 

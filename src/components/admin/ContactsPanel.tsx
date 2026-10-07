@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
+import { DietPlans } from "./DietPlans";
 
 type Status = "new" | "called" | "client" | "not_interested";
 
@@ -75,11 +76,20 @@ export function ContactsPanel() {
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [onlyDangerous, setOnlyDangerous] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [planCounts, setPlanCounts] = useState<Record<string, number>>({});
+  // The client whose diet plans are open (replaces the list while open)
+  const [plansFor, setPlansFor] = useState<Contact | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase().from("contacts_overview").select("*");
-    if (error) setError("Couldn't load contacts. Are you logged in as the admin?");
-    else setContacts(data as Contact[]);
+    const [contactsRes, plansRes] = await Promise.all([
+      supabase().from("contacts_overview").select("*"),
+      supabase().from("diet_plans").select("phone"),
+    ]);
+    if (contactsRes.error) return setError("Couldn't load contacts. Are you logged in as the admin?");
+    setContacts(contactsRes.data as Contact[]);
+    const counts: Record<string, number> = {};
+    for (const row of (plansRes.data ?? []) as { phone: string }[]) counts[row.phone] = (counts[row.phone] ?? 0) + 1;
+    setPlanCounts(counts);
   }, []);
 
   useEffect(() => {
@@ -126,6 +136,18 @@ export function ContactsPanel() {
 
   if (error && !contacts) return <p className="mt-8 font-semibold text-red-800">{error}</p>;
   if (!contacts) return <p className="mt-8 text-anthracite/60">Loading contacts…</p>;
+
+  if (plansFor) {
+    return (
+      <DietPlans
+        client={plansFor}
+        onBack={() => {
+          setPlansFor(null);
+          load(); // refresh plan counts
+        }}
+      />
+    );
+  }
 
   return (
     <section className="mt-6">
@@ -180,10 +202,22 @@ export function ContactsPanel() {
                   Dangerous goal
                 </span>
               )}
+              {(planCounts[c.phone] ?? 0) > 0 && (
+                <span className="rounded-full bg-titanium-light px-2.5 py-0.5 text-xs font-medium text-anthracite/70">
+                  {planCounts[c.phone]} diet plan{planCounts[c.phone] === 1 ? "" : "s"}
+                </span>
+              )}
               <span className="text-sm text-anthracite/50">{dateTime(c.last_contact)}</span>
             </button>
 
-            {open === c.phone && <ContactDetails contact={c} onSave={(changes) => save(c.phone, changes)} />}
+            {open === c.phone && (
+              <ContactDetails
+                contact={c}
+                planCount={planCounts[c.phone] ?? 0}
+                onOpenPlans={() => setPlansFor(c)}
+                onSave={(changes) => save(c.phone, changes)}
+              />
+            )}
           </li>
         ))}
       </ul>
@@ -193,9 +227,13 @@ export function ContactsPanel() {
 
 function ContactDetails({
   contact: c,
+  planCount,
+  onOpenPlans,
   onSave,
 }: {
   contact: Contact;
+  planCount: number;
+  onOpenPlans: () => void;
   onSave: (changes: Partial<Pick<Contact, "status" | "notes">>) => Promise<boolean>;
 }) {
   const [notes, setNotes] = useState(c.notes);
@@ -233,6 +271,15 @@ function ContactDetails({
           <a href={calendarLink(c)} target="_blank" rel="noopener noreferrer" className={button.outlineDark}>
             Add to Google Calendar
           </a>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-titanium-light/60 p-3">
+          <span className="text-sm">
+            <b>Diet plans</b> · {planCount === 0 ? "none yet" : `${planCount} saved`}
+          </span>
+          <button type="button" className={button.outlineDark} onClick={onOpenPlans}>
+            {planCount === 0 ? "Create diet plan" : "Open diet plans"}
+          </button>
         </div>
 
         <label className="block text-sm font-semibold">
