@@ -1,18 +1,55 @@
-import { supabase } from "@/lib/supabase";
+import { coachId, supabase } from "@/lib/supabase";
 import type { Food } from "./FoodsPanel";
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 
 /** Loads the whole food list (shared Livsmedelsverket foods + the coach's own, with their favourites), page by page. */
 export async function loadAllFoods(): Promise<Food[]> {
-  const all: Food[] = [];
+  const [foods, units] = await Promise.all([
+    loadPaged<Omit<Food, "units">>("coach_foods", "name"),
+    loadPaged<FoodUnit>("food_units", "grams"),
+  ]);
+  const byFood = new Map<string, FoodUnit[]>();
+  for (const u of units) byFood.set(u.food_id, [...(byFood.get(u.food_id) ?? []), { ...u, grams: Number(u.grams) }]);
+  return foods.map((f) => ({ ...f, units: byFood.get(f.id) ?? [] }));
+}
+
+async function loadPaged<T>(table: string, order: string): Promise<T[]> {
+  const all: T[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase().from("coach_foods").select("*").order("name").range(from, from + PAGE - 1);
+    const { data, error } = await supabase().from(table).select("*").order(order).range(from, from + PAGE - 1);
     if (error) throw error;
-    all.push(...(data as Food[]));
+    all.push(...(data as T[]));
     if (data.length < PAGE) return all;
   }
 }
+
+/** A named amount of a food, e.g. "1 st" = 60 g. coach_id null = shared starter unit. */
+export type FoodUnit = { id: string; food_id: string; coach_id: string | null; name: string; grams: number };
+
+/** Asks for a new unit ("1 burk", 185) and saves it for the food. Returns null if cancelled or it failed. */
+export async function promptNewUnit(food: Food): Promise<FoodUnit | null> {
+  const name = window.prompt(`New unit for "${food.name}", e.g. 1 st, 1 dl, 1 burk:`)?.trim();
+  if (!name) return null;
+  const grams = Number(window.prompt(`How many grams is "${name}" of ${food.name}?`)?.replace(",", "."));
+  if (!(grams > 0 && grams <= 5000)) {
+    if (!Number.isNaN(grams)) window.alert("Enter the weight in grams, e.g. 60.");
+    return null;
+  }
+  const { data, error } = await supabase()
+    .from("food_units")
+    .insert({ food_id: food.id, coach_id: await coachId(), name: name.slice(0, 40), grams })
+    .select()
+    .single();
+  if (error) {
+    window.alert(error.code === "23505" ? `"${name}" already exists for this food.` : "Couldn't save the unit.");
+    return null;
+  }
+  return { ...(data as FoodUnit), grams: Number(data.grams) };
+}
+
+/** "2 st", "1.5 dl" — trims trailing zeros. */
+export const formatQuantity = (q: number) => String(Math.round(q * 100) / 100).replace(".", ",");
 
 /** Favourites first, then your own foods, then the rest alphabetically. */
 export const byRelevance = (a: Food, b: Food) =>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
 import { coachId, supabase } from "@/lib/supabase";
-import { loadAllFoods, searchFoods } from "./foodsData";
+import { formatQuantity, loadAllFoods, promptNewUnit, searchFoods, type FoodUnit } from "./foodsData";
 
 export type Category =
   | "protein"
@@ -34,6 +34,8 @@ export type Food = {
   source: "livsmedelsverket" | "mine";
   lmv_group: string | null;
   favorite: boolean;
+  /** "1 st" = 60 g etc.: shared starter units plus the coach's own */
+  units: FoodUnit[];
 };
 
 export const CATEGORY_LABELS: Record<Category, string> = {
@@ -153,6 +155,18 @@ export function FoodsPanel() {
     }
   }
 
+  async function addUnit(food: Food) {
+    const unit = await promptNewUnit(food);
+    if (unit) replace({ ...food, units: [...food.units, unit] });
+  }
+
+  async function removeUnit(food: Food, unit: FoodUnit) {
+    if (!window.confirm(`Remove "${unit.name}" from ${food.name}? Diets using it keep their grams.`)) return;
+    const { error } = await supabase().from("food_units").delete().eq("id", unit.id);
+    if (error) setError("Couldn't remove the unit.");
+    else replace({ ...food, units: food.units.filter((u) => u.id !== unit.id) });
+  }
+
   async function remove(food: Food) {
     if (!window.confirm(`Delete "${food.name}"?`)) return;
     const { error } = await supabase().from("foods").delete().eq("id", food.id);
@@ -225,7 +239,7 @@ export function FoodsPanel() {
               <th className="p-3 text-right font-medium">Protein</th>
               <th className="p-3 text-right font-medium">Carbs</th>
               <th className="p-3 text-right font-medium">Fat</th>
-              <th className="p-3 font-medium">Portion</th>
+              <th className="p-3 font-medium">Units</th>
               <th className="p-3" />
             </tr>
           </thead>
@@ -282,8 +296,27 @@ export function FoodsPanel() {
                   <td className="p-3 text-right tabular-nums">{f.protein_g} g</td>
                   <td className="p-3 text-right tabular-nums">{f.carbs_g} g</td>
                   <td className="p-3 text-right tabular-nums">{f.fat_g} g</td>
-                  <td className="p-3 text-anthracite/70">
-                    {f.portion_name && f.portion_grams ? `${f.portion_name} = ${f.portion_grams} g` : "—"}
+                  <td className="p-3 text-xs text-anthracite/70">
+                    <span className="flex flex-wrap items-center gap-1">
+                      {f.units.map((u) => (
+                        <span key={u.id} className="whitespace-nowrap rounded-full bg-anthracite/5 px-2 py-0.5">
+                          {u.name} = {formatQuantity(u.grams)} g
+                          {u.coach_id && (
+                            <button
+                              type="button"
+                              onClick={() => removeUnit(f, u)}
+                              aria-label={`Remove unit ${u.name}`}
+                              className="ml-1 text-anthracite/40 hover:text-red-800"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      <button type="button" onClick={() => addUnit(f)} className="whitespace-nowrap underline underline-offset-4">
+                        + unit
+                      </button>
+                    </span>
                   </td>
                   <td className="whitespace-nowrap p-3 text-right">
                     {f.source === "mine" ? (
@@ -371,8 +404,19 @@ function FoodForm({
       : supabase().from("foods").insert(row).select().single();
     const { data, error } = await query;
     setBusy(false);
-    if (error) setError("Couldn't save. Check that the numbers are realistic (per 100 g).");
-    else onSaved({ ...(data as Food), favorite: food?.favorite ?? false });
+    if (error) return setError("Couldn't save. Check that the numbers are realistic (per 100 g).");
+    const saved = data as Food;
+    let units = food?.units ?? [];
+    // A new food's portion ("1 st" = 60 g) becomes its first unit, so diets can use it straight away
+    if (!food && row.portion_name && row.portion_grams) {
+      const { data: unit } = await supabase()
+        .from("food_units")
+        .insert({ food_id: saved.id, coach_id: await coachId(), name: row.portion_name.slice(0, 40), grams: row.portion_grams })
+        .select()
+        .single();
+      if (unit) units = [{ ...(unit as FoodUnit), grams: Number(unit.grams) }];
+    }
+    onSaved({ ...saved, favorite: food?.favorite ?? false, units });
   }
 
   const field = "mt-1 w-full rounded-md border border-anthracite/20 bg-white px-3 py-2 font-normal outline-none focus:border-military";

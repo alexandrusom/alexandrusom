@@ -3,7 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { addMacros, byRelevance, loadAllFoods, macrosFor, searchFoods, ZERO } from "./foodsData";
+import {
+  addMacros,
+  byRelevance,
+  formatQuantity,
+  loadAllFoods,
+  macrosFor,
+  promptNewUnit,
+  searchFoods,
+  ZERO,
+  type FoodUnit,
+} from "./foodsData";
 import type { Food } from "./FoodsPanel";
 
 /** The client a plan belongs to (a row from contacts_overview). */
@@ -27,7 +37,17 @@ type Plan = {
   is_current: boolean;
 };
 
-type Item = { id: string; plan_id: string; meal: string; food_id: string; grams: number; position: number };
+type Item = {
+  id: string;
+  plan_id: string;
+  meal: string;
+  food_id: string;
+  grams: number;
+  position: number;
+  /** Shown as "quantity × unit" when set; grams is always what the totals use */
+  unit_id: string | null;
+  quantity: number | null;
+};
 
 const round = (n: number) => Math.round(n);
 const date = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { dateStyle: "medium" });
@@ -89,7 +109,7 @@ export function DietPlans({ client }: { client: PlanClient }) {
     if (error) return setError("Couldn't create the new version.");
     const plan = data as Plan;
     if (current) {
-      const { data: items } = await db.from("diet_plan_items").select("meal, food_id, grams, position").eq("plan_id", current.id);
+      const { data: items } = await db.from("diet_plan_items").select("meal, food_id, grams, position, unit_id, quantity").eq("plan_id", current.id);
       if (items?.length) {
         const { error } = await db.from("diet_plan_items").insert(items.map((i) => ({ ...i, plan_id: plan.id })));
         if (error) setError("The new version was created, but copying the foods failed.");
@@ -232,7 +252,12 @@ function DietBuilder({
     const position = (items ?? []).filter((i) => i.meal === meal).length;
     const { data, error } = await supabase()
       .from("diet_plan_items")
-      .insert({ plan_id: plan.id, meal, food_id: food.id, grams: food.portion_grams ?? 100, position })
+      .insert(
+        // Start with one of its first unit ("1 st") when it has one, otherwise 100 g
+        food.units[0]
+          ? { plan_id: plan.id, meal, food_id: food.id, position, unit_id: food.units[0].id, quantity: 1, grams: food.units[0].grams }
+          : { plan_id: plan.id, meal, food_id: food.id, position, grams: 100 },
+      )
       .select()
       .single();
     if (error) return setError("Couldn't add the food.");
@@ -240,12 +265,24 @@ function DietBuilder({
     savePlan({});
   }
 
-  async function updateGrams(item: Item, grams: number) {
-    if (!(grams > 0 && grams <= 3000) || grams === item.grams) return;
-    setItems((list) => list?.map((i) => (i.id === item.id ? { ...i, grams } : i)) ?? null);
-    const { error } = await supabase().from("diet_plan_items").update({ grams }).eq("id", item.id);
+  /** Sets the amount as quantity × unit (unit null = plain grams). */
+  async function updateAmount(item: Item, quantity: number, unit: FoodUnit | null) {
+    const grams = Math.round((unit ? quantity * unit.grams : quantity) * 10) / 10;
+    if (!(quantity > 0 && grams > 0 && grams <= 3000)) return;
+    const changes = { grams, unit_id: unit?.id ?? null, quantity: unit ? quantity : null };
+    if (grams === item.grams && changes.unit_id === item.unit_id && changes.quantity === item.quantity) return;
+    setItems((list) => list?.map((i) => (i.id === item.id ? { ...i, ...changes } : i)) ?? null);
+    const { error } = await supabase().from("diet_plan_items").update(changes).eq("id", item.id);
     if (error) setError("Couldn't save the amount.");
     else savePlan({});
+  }
+
+  /** Adds a unit to a food (from the amount picker) and switches the item to 1 of it. */
+  async function addUnit(item: Item, food: Food) {
+    const unit = await promptNewUnit(food);
+    if (!unit) return;
+    setFoods((list) => list?.map((f) => (f.id === food.id ? { ...f, units: [...f.units, unit] } : f)) ?? null);
+    updateAmount(item, 1, unit);
   }
 
   async function removeItem(item: Item) {
@@ -379,27 +416,13 @@ function DietBuilder({
                     const x = macrosFor(food, item.grams);
                     return (
                       <li key={item.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm">
-                        <span className="min-w-48 flex-1 font-medium">
-                          {food.name}
-                          {food.portion_name && food.portion_grams && (
-                            <span className="ml-1 font-normal text-anthracite/50">
-                              ({(item.grams / food.portion_grams).toFixed(item.grams % food.portion_grams ? 1 : 0)} ×{" "}
-                              {food.portion_name})
-                            </span>
-                          )}
-                        </span>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={1}
-                            max={3000}
-                            defaultValue={item.grams}
-                            onBlur={(e) => updateGrams(item, Number(e.target.value))}
-                            aria-label={`Grams of ${food.name}`}
-                            className="w-20 rounded-md border border-anthracite/20 px-2 py-1 text-right"
-                          />
-                          g
-                        </label>
+                        <span className="min-w-48 flex-1 font-medium">{food.name}</span>
+                        <Amount
+                          item={item}
+                          food={food}
+                          onChange={(quantity, unit) => updateAmount(item, quantity, unit)}
+                          onNewUnit={() => addUnit(item, food)}
+                        />
                         <span className="w-20 text-right tabular-nums font-semibold">{round(x.kcal)} kcal</span>
                         <span className="w-44 tabular-nums text-anthracite/60">
                           P {round(x.protein)} · K {round(x.carbs)} · F {round(x.fat)}
@@ -456,6 +479,59 @@ function DietBuilder({
       </label>
       <p className="mt-2 text-xs text-anthracite/50">Changes save automatically.</p>
     </div>
+  );
+}
+
+/** "2 × st (120 g)": quantity plus a unit picker with grams, the food's units and "+ New unit…". */
+function Amount({
+  item,
+  food,
+  onChange,
+  onNewUnit,
+}: {
+  item: Item;
+  food: Food;
+  onChange: (quantity: number, unit: FoodUnit | null) => void;
+  onNewUnit: () => void;
+}) {
+  const unit = food.units.find((u) => u.id === item.unit_id) ?? null;
+  const quantity = unit ? (item.quantity ?? item.grams / unit.grams) : item.grams;
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        key={`${item.unit_id}-${quantity}`}
+        type="number"
+        min={unit ? 0.25 : 1}
+        step={unit ? 0.25 : 1}
+        max={3000}
+        defaultValue={quantity}
+        onBlur={(e) => onChange(Number(e.target.value), unit)}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        aria-label={`Amount of ${food.name}`}
+        className="w-16 rounded-md border border-anthracite/20 px-2 py-1 text-right"
+      />
+      <select
+        value={unit?.id ?? "g"}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "new") return onNewUnit();
+          const next = food.units.find((u) => u.id === v) ?? null;
+          // Keep the same weight when switching to grams; start at 1 when picking a unit
+          onChange(next ? 1 : item.grams, next);
+        }}
+        aria-label={`Unit for ${food.name}`}
+        className="rounded-md border border-anthracite/20 bg-white px-1 py-1"
+      >
+        <option value="g">g</option>
+        {food.units.map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.name.replace(/^1 /, "")} ({formatQuantity(u.grams)} g)
+          </option>
+        ))}
+        <option value="new">+ New unit…</option>
+      </select>
+      {unit && <span className="w-14 text-xs tabular-nums text-anthracite/50">= {formatQuantity(item.grams)} g</span>}
+    </span>
   );
 }
 
