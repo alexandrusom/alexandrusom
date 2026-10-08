@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { button } from "@/components/ui";
 import { coachId, supabase } from "@/lib/supabase";
-import { byRelevance, loadAllFoods } from "./foodsData";
+import { loadAllFoods, searchFoods } from "./foodsData";
 
 export type Category =
   | "protein"
@@ -130,15 +130,12 @@ export function FoodsPanel() {
   }, [load]);
 
   const matches = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (foods ?? [])
-      .filter(
-        (f) =>
-          (category === "all" || f.category === category) &&
-          (source === "all" || (source === "favorites" ? f.favorite : f.source === source)) &&
-          (!q || f.name.toLowerCase().includes(q) || (f.brand ?? "").toLowerCase().includes(q)),
-      )
-      .sort(byRelevance);
+    const filtered = (foods ?? []).filter(
+      (f) =>
+        (category === "all" || f.category === category) &&
+        (source === "all" || (source === "favorites" ? f.favorite : f.source === source)),
+    );
+    return searchFoods(filtered, search);
   }, [foods, search, category, source]);
   const visible = matches.slice(0, SHOW);
 

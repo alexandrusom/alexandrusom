@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { button } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { addMacros, byRelevance, loadAllFoods, macrosFor, ZERO } from "./foodsData";
+import { addMacros, byRelevance, loadAllFoods, macrosFor, searchFoods, ZERO } from "./foodsData";
 import type { Food } from "./FoodsPanel";
 
 /** The client a plan belongs to (a row from contacts_overview). */
@@ -467,9 +467,8 @@ function FoodPicker({ foods, onPick }: { foods: Food[]; onPick: (food: Food) => 
   const box = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const pool = q ? foods.filter((f) => f.name.toLowerCase().includes(q) || (f.brand ?? "").toLowerCase().includes(q)) : foods.filter((f) => f.favorite);
-    return [...pool].sort(byRelevance).slice(0, 8);
+    const list = query.trim() ? searchFoods(foods, query) : foods.filter((f) => f.favorite).sort(byRelevance);
+    return list.slice(0, 12);
   }, [foods, query]);
 
   function pick(food: Food) {

@@ -20,6 +20,37 @@ export const byRelevance = (a: Food, b: Food) =>
   Number(b.source === "mine") - Number(a.source === "mine") ||
   a.name.localeCompare(b.name, "sv");
 
+/** Lowercase without accents, so "agg" finds "Ägg" and "creme" finds "Crème". */
+const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/**
+ * Search that ranks like you'd expect: every word must match ("kyckling bröst"), and
+ * "Kyckling bröstfilé rå" beats "Biryani m. kyckling". Favourites and your own foods get a boost,
+ * ready-made dishes a penalty, and shorter (simpler) names win ties.
+ */
+export function searchFoods(foods: Food[], query: string): Food[] {
+  const words = fold(query).split(/[\s,]+/).filter(Boolean);
+  if (words.length === 0) return [...foods].sort(byRelevance);
+  const scored: { food: Food; score: number }[] = [];
+  for (const food of foods) {
+    const name = fold(`${food.name} ${food.brand ?? ""}`);
+    if (!words.every((w) => name.includes(w))) continue;
+    const tokens = name.split(/[\s,.()-]+/);
+    let score = 0;
+    if (name.startsWith(words[0])) score += 100; // "Kyckling …" for "kyckling"
+    for (const w of words) {
+      if (tokens.includes(w)) score += 20; // whole word
+      else if (tokens.some((t) => t.startsWith(w))) score += 12; // start of a word: "bröst" → "bröstfilé"
+    }
+    if (food.favorite) score += 60;
+    if (food.source === "mine") score += 30;
+    if (food.category === "dishes") score -= 40;
+    score -= name.length / 4;
+    scored.push({ food, score });
+  }
+  return scored.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name, "sv")).map((s) => s.food);
+}
+
 export type Macros = { kcal: number; protein: number; carbs: number; fat: number };
 
 /** Macros for a given amount of a food (values are stored per 100 g). */
